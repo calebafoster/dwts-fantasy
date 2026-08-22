@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DWTS Fantasy</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #222; padding: 1rem; }
+    h1 { font-size: 1.4rem; margin-bottom: 1rem; }
+    h2 { font-size: 1rem; margin-bottom: 0.5rem; color: #555; text-transform: uppercase; letter-spacing: 0.05em; }
+    .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .top nav a { margin-left: 1rem; color: #be185d; text-decoration: none; font-size: 0.9rem; }
+    .card { background: white; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .big { font-size: 2rem; font-weight: bold; }
+    .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .row .card { flex: 1; min-width: 140px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    td, th { padding: 0.4rem 0.5rem; text-align: left; border-bottom: 1px solid #eee; }
+    th { font-weight: 600; color: #555; }
+    form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; }
+    input, select { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 5px; font-size: 0.95rem; width: 100%; }
+    .field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1; min-width: 140px; }
+    label { font-size: 0.8rem; color: #666; }
+    button { padding: 0.45rem 1rem; background: #be185d; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.95rem; white-space: nowrap; }
+    button:active { background: #9d174d; }
+    .flash { background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
+    .empty-slot { color: #999; font-style: italic; }
+    .badge { display: inline-block; background: #f3e8ff; color: #6b21a8; border-radius: 4px; padding: 0.1rem 0.4rem; font-size: 0.75rem; margin-left: 0.4rem; }
+  </style>
+</head>
+<body>
+
+<div class="top">
+  <h1>DWTS Fantasy</h1>
+  <nav>
+    <a href="{{ url_for('standings') }}">Standings</a>
+    {% if player.is_admin %}<a href="{{ url_for('admin') }}">Admin</a>{% endif %}
+    <a href="{{ url_for('logout') }}">Log Out</a>
+  </nav>
+</div>
+
+{% for msg in get_flashed_messages() %}
+  <div class="flash">{{ msg }}</div>
+{% endfor %}
+
+<div class="row">
+  <div class="card">
+    <h2>{{ player.name }}</h2>
+    <div class="big">{{ "%.1f"|format(player.season_points) }} pts</div>
+  </div>
+  <div class="card">
+    <h2>This Week</h2>
+    <div class="big">{{ "%.1f"|format(player.points_this_week) }} pts</div>
+    <div>{{ player.mult_this_week }}x multiplier</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Your Roster</h2>
+  <table>
+    <tr><th>Contestant</th><th>Partner</th><th>Points This Week</th><th></th></tr>
+    {% for c in roster %}
+    <tr>
+      <td>{{ c.name }}</td>
+      <td>{{ c.partner or "—" }}</td>
+      <td>{{ "%.1f"|format(c.points_this_week) }}</td>
+      <td></td>
+    </tr>
+    {% endfor %}
+    {% for _ in range(2 - roster|length) %}
+    <tr>
+      <td class="empty-slot" colspan="3">Empty slot — draft below</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if roster|length < 2 %}
+<div class="card">
+  <h2>Draft a Contestant</h2>
+  <form method="post" action="{{ url_for('draft_route') }}">
+    <div class="field">
+      <label>Contestant</label>
+      <select name="contestant_id" required>
+        {% for c in unclaimed %}
+        <option value="{{ c.id }}">{{ c.name }}{% if c.partner %} &amp; {{ c.partner }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">Draft</button>
+  </form>
+</div>
+{% endif %}
+
+{% if week_number %}
+<div class="card">
+  <h2>Week {{ week_number }} Predictions</h2>
+  <form method="post" action="{{ url_for('predict_route') }}">
+    <div class="field">
+      <label>Highest Scorer</label>
+      <select name="highest_id" required>
+        {% for c in active_contestants %}
+        <option value="{{ c.id }}" {% if prediction and prediction.predicted_highest_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Loser</label>
+      <select name="loser_id" required>
+        {% for c in active_contestants %}
+        <option value="{{ c.id }}" {% if prediction and prediction.predicted_loser_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">{% if prediction %}Update{% else %}Submit{% endif %}</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Leaderboard</h2>
+  <table>
+    <tr><th>#</th><th>Player</th><th>Points</th></tr>
+    {% for p in leaderboard %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ p.name }}{% if p.name == player.name %}<span class="badge">you</span>{% endif %}</td>
+      <td>{{ "%.1f"|format(p.season_points) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+</body>
+</html>

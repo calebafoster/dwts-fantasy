@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DWTS Fantasy — Standings</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #222; padding: 1rem; }
+    h1 { font-size: 1.4rem; margin-bottom: 1rem; }
+    h2 { font-size: 1rem; margin-bottom: 0.5rem; color: #555; text-transform: uppercase; letter-spacing: 0.05em; }
+    .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .top nav a { margin-left: 1rem; color: #be185d; text-decoration: none; font-size: 0.9rem; }
+    .card { background: white; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    td, th { padding: 0.4rem 0.5rem; text-align: left; border-bottom: 1px solid #eee; }
+    th { font-weight: 600; color: #555; }
+  </style>
+</head>
+<body>
+
+<div class="top">
+  <h1>Standings</h1>
+  <nav>
+    <a href="{{ url_for('index') }}">Home</a>
+  </nav>
+</div>
+
+<div class="card">
+  <h2>Overall</h2>
+  <table>
+    <tr><th>#</th><th>Player</th><th>Season Points</th></tr>
+    {% for p in leaderboard %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ p.name }}</td>
+      <td>{{ "%.1f"|format(p.season_points) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>Week by Week</h2>
+  {% for week_number, rows in standings|groupby('week_number') %}
+  <h2 style="margin-top:1rem">Week {{ week_number }}</h2>
+  <table>
+    <tr><th>Player</th><th>Points This Week</th><th>Cumulative</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td>{{ "%.1f"|format(r.points_total) }}</td>
+      <td>{{ "%.1f"|format(r.cumulative_points) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p>No weeks finalized yet.</p>
+  {% endfor %}
+</div>
+
+</body>
+</html>
