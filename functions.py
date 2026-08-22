@@ -476,11 +476,17 @@ def get_standings():
 
 def get_leaderboard():
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT name, season_points FROM players ORDER BY season_points DESC"
+    players = conn.execute(
+        "SELECT id, name, season_points FROM players ORDER BY season_points DESC"
     ).fetchall()
+    leaderboard = []
+    for p in players:
+        roster = conn.execute(
+            "SELECT name, partner FROM contestants WHERE claimant = ? ORDER BY name", (p["id"],)
+        ).fetchall()
+        leaderboard.append({"name": p["name"], "season_points": p["season_points"], "roster": roster})
     conn.close()
-    return rows
+    return leaderboard
 
 
 def overview():

@@ -25,11 +25,18 @@
 <div class="card">
   <h2>Overall</h2>
   <table>
-    <tr><th>#</th><th>Player</th><th>Season Points</th></tr>
+    <tr><th>#</th><th>Player</th><th>Roster</th><th>Season Points</th></tr>
     {% for p in leaderboard %}
     <tr>
       <td>{{ loop.index }}</td>
       <td>{{ p.name }}</td>
+      <td>
+        {% if p.roster %}
+          {% for c in p.roster %}{{ c.name }}{% if c.partner %} &amp; {{ c.partner }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+        {% else %}
+          <span class="empty-slot">No picks</span>
+        {% endif %}
+      </td>
       <td>{{ "%.1f"|format(p.season_points) }}</td>
     </tr>
     {% endfor %}
