@@ -14,6 +14,9 @@ p.add_argument("name")
 p.add_argument("password")
 p.add_argument("--admin", action="store_true")
 
+rp = subparsers.add_parser("reset-password", help="Clear a player's password; they set a new one on next login")
+rp.add_argument("name")
+
 c = subparsers.add_parser("add-contestant", aliases=["c"], help="Add a contestant")
 c.add_argument("name")
 c.add_argument("--partner", default=None)
@@ -49,6 +52,9 @@ elif args.command == "add-player":
     )
     conn.commit()
     conn.close()
+elif args.command == "reset-password":
+    success, error = clear_password(args.name)
+    print(error if error else f'Password cleared for "{args.name}". They\'ll set a new one on next login.')
 elif args.command in ("add-contestant", "c"):
     add_contestant(args.name, args.partner)
 elif args.command == "set-points":

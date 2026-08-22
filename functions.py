@@ -149,17 +149,30 @@ def get_prediction(player_id, week_number):
 # ---------- auth ----------
 
 def login_or_create(name, password):
-    """Returns (player_row, error). Creates a new player if the name doesn't exist yet."""
+    """Returns (player_row, error). Creates a new player if the name doesn't exist yet.
+    A player whose password was cleared by an admin (password_hash == "") sets a new
+    password on their next login, same as a brand-new account."""
     conn = get_conn()
     player = conn.execute("SELECT * FROM players WHERE name = ?", (name,)).fetchone()
     if player is None:
-        password_hash = generate_password_hash(password)
         conn.execute(
-            "INSERT INTO players (name, password_hash) VALUES (?, ?)", (name, password_hash)
+            "INSERT INTO players (name, password_hash) VALUES (?, ?)",
+            (name, generate_password_hash(password)),
         )
         log_event(conn, f'New player "{name}" created')
         conn.commit()
         player = conn.execute("SELECT * FROM players WHERE name = ?", (name,)).fetchone()
+        conn.close()
+        return player, None
+
+    if player["password_hash"] == "":
+        conn.execute(
+            "UPDATE players SET password_hash = ? WHERE id = ?",
+            (generate_password_hash(password), player["id"]),
+        )
+        log_event(conn, f'Password set for "{name}" after admin reset')
+        conn.commit()
+        player = conn.execute("SELECT * FROM players WHERE id = ?", (player["id"],)).fetchone()
         conn.close()
         return player, None
 
@@ -169,6 +182,22 @@ def login_or_create(name, password):
 
     conn.close()
     return None, "Wrong password."
+
+
+def clear_password(name):
+    """Returns (success, error). Admin-driven recovery: clears the stored hash so the
+    player sets a brand-new password on their next login attempt."""
+    conn = get_conn()
+    player = conn.execute("SELECT * FROM players WHERE name = ?", (name,)).fetchone()
+    if player is None:
+        conn.close()
+        return False, f'No player named "{name}".'
+
+    conn.execute("UPDATE players SET password_hash = ? WHERE id = ?", ("", player["id"]))
+    log_event(conn, f'Password cleared for "{name}" by admin')
+    conn.commit()
+    conn.close()
+    return True, None
 
 
 def get_player(player_id):
