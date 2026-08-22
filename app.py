@@ -16,7 +16,7 @@ start_first_week()
 
 @app.before_request
 def require_login():
-    if request.endpoint not in ("login",) and not session.get("player_id"):
+    if request.endpoint not in ("login", "static") and not session.get("player_id"):
         return redirect(url_for("login"))
 
 
