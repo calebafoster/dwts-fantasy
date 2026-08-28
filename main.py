@@ -60,7 +60,9 @@ elif args.command in ("add-contestant", "c"):
 elif args.command == "set-points":
     set_contestant_points_this_week(args.contestant_id, args.points)
 elif args.command == "eliminate":
-    eliminate_contestant(args.contestant_id, args.final_place)
+    triggered = eliminate_contestant(args.contestant_id, args.final_place)
+    if triggered:
+        print("Reserve pool is empty — full-roster players must drop one contestant.")
 elif args.command == "finalize-week":
     finalize_week(args.highest_id, args.loser_ids, args.double_elimination)
 elif args.command == "finish-season":

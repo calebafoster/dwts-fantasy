@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS players (
     season_points REAL NOT NULL DEFAULT 0,
     points_this_week REAL NOT NULL DEFAULT 0,
     mult_this_week REAL NOT NULL DEFAULT 1.0,
-    submitted_this_week INTEGER NOT NULL DEFAULT 0
+    submitted_this_week INTEGER NOT NULL DEFAULT 0,
+    roster_size INTEGER NOT NULL DEFAULT 2,
+    pending_forced_drop INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS contestants (
@@ -94,8 +96,18 @@ def get_conn():
 def init_db():
     conn = get_conn()
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.commit()
     conn.close()
+
+
+def _migrate(conn):
+    """Ad-hoc migration for columns added after a db was already created."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(players)").fetchall()]
+    if "roster_size" not in cols:
+        conn.execute("ALTER TABLE players ADD COLUMN roster_size INTEGER NOT NULL DEFAULT 2")
+    if "pending_forced_drop" not in cols:
+        conn.execute("ALTER TABLE players ADD COLUMN pending_forced_drop INTEGER NOT NULL DEFAULT 0")
 
 
 def log_event(conn, event_name):
@@ -243,6 +255,14 @@ def draft_contestant(player_id, contestant_id):
     every pick after that is priced at the lowest contestant score from the
     most recently completed week. Returns the cost charged."""
     conn = get_conn()
+    player = conn.execute("SELECT * FROM players WHERE id = ?", (player_id,)).fetchone()
+    if player is None:
+        conn.close()
+        raise ValueError("Player not found.")
+    if player["pending_forced_drop"]:
+        conn.close()
+        raise ValueError("Resolve your forced roster drop before drafting.")
+
     contestant = conn.execute("SELECT * FROM contestants WHERE id = ?", (contestant_id,)).fetchone()
     if contestant is None:
         conn.close()
@@ -254,9 +274,9 @@ def draft_contestant(player_id, contestant_id):
     roster_count = conn.execute(
         "SELECT COUNT(*) FROM contestants WHERE claimant = ?", (player_id,)
     ).fetchone()[0]
-    if roster_count >= 2:
+    if roster_count >= player["roster_size"]:
         conn.close()
-        raise ValueError("You already have two drafted contestants.")
+        raise ValueError(f"You already have {player['roster_size']} drafted contestant(s).")
 
     picks_so_far = conn.execute(
         "SELECT COUNT(*) FROM draft_history WHERE player_id = ?", (player_id,)
@@ -335,6 +355,10 @@ def set_final_place(contestant_id, final_place):
 
 
 def eliminate_contestant(contestant_id, final_place=None):
+    """Eliminates a contestant. Returns True if doing so exhausted the reserve
+    pool (no unclaimed, non-eliminated contestants left), which forces every
+    player currently holding a full roster to drop one contestant — see
+    _trigger_forced_drop_if_needed."""
     conn = get_conn()
     current_week = get_active_week_number(conn) or 1
     conn.execute(
@@ -347,6 +371,69 @@ def eliminate_contestant(contestant_id, final_place=None):
     )
     conn.execute("UPDATE contestants SET claimant = NULL WHERE id = ?", (contestant_id,))
     log_event(conn, f"Contestant {contestant_id} eliminated")
+    triggered = _trigger_forced_drop_if_needed(conn)
+    conn.commit()
+    conn.close()
+    return triggered
+
+
+def _trigger_forced_drop_if_needed(conn):
+    """When the reserve pool (unclaimed, non-eliminated contestants) hits zero,
+    every player holding two contestants must give one up so the pool has
+    something in it again. Flags those players' `pending_forced_drop`; they
+    resolve it via resolve_forced_drop(), which permanently caps them at one
+    roster slot. Returns True if the flag was set for anyone."""
+    reserve_size = conn.execute(
+        "SELECT COUNT(*) FROM contestants WHERE claimant IS NULL AND eliminated = 0"
+    ).fetchone()[0]
+    if reserve_size > 0:
+        return False
+
+    full_roster_players = conn.execute(
+        """
+        SELECT players.id FROM players
+        WHERE (SELECT COUNT(*) FROM contestants WHERE claimant = players.id) >= 2
+        """
+    ).fetchall()
+    if not full_roster_players:
+        return False
+
+    conn.executemany(
+        "UPDATE players SET pending_forced_drop = 1 WHERE id = ?",
+        [(p["id"],) for p in full_roster_players],
+    )
+    log_event(conn, "Reserve pool exhausted — full-roster players must drop one contestant")
+    return True
+
+
+def resolve_forced_drop(player_id, contestant_id):
+    """Releases one of a player's contestants back to the reserve pool as part
+    of a pending forced drop (see _trigger_forced_drop_if_needed). Free of
+    charge, and permanently caps that player's roster at one slot."""
+    conn = get_conn()
+    player = conn.execute("SELECT * FROM players WHERE id = ?", (player_id,)).fetchone()
+    if player is None or not player["pending_forced_drop"]:
+        conn.close()
+        raise ValueError("No forced drop is pending for this player.")
+
+    contestant = conn.execute("SELECT * FROM contestants WHERE id = ?", (contestant_id,)).fetchone()
+    if contestant is None or contestant["claimant"] != player_id:
+        conn.close()
+        raise ValueError("That contestant is not on your roster.")
+
+    current_week = get_active_week_number(conn) or 1
+    conn.execute("UPDATE contestants SET claimant = NULL WHERE id = ?", (contestant_id,))
+    conn.execute(
+        """
+        UPDATE draft_history SET week_ended = ?
+        WHERE player_id = ? AND contestant_id = ? AND week_ended IS NULL
+        """,
+        (current_week, player_id, contestant_id),
+    )
+    conn.execute(
+        "UPDATE players SET roster_size = 1, pending_forced_drop = 0 WHERE id = ?", (player_id,)
+    )
+    log_event(conn, f"Player {player_id} force-released contestant {contestant_id} (reserve pool exhausted)")
     conn.commit()
     conn.close()
 
@@ -386,6 +473,7 @@ def finalize_week(highest_contestant_id, loser_contestant_ids, double_eliminatio
             "INSERT INTO weekly_contestant_results (week_number, contestant_id, points) VALUES (?, ?, ?)",
             (week_number, c["id"], c["points_this_week"]),
         )
+    week_lowest_score = min((c["points_this_week"] for c in contestants), default=0.0)
 
     players = conn.execute("SELECT * FROM players").fetchall()
     for p in players:
@@ -400,6 +488,8 @@ def finalize_week(highest_contestant_id, loser_contestant_ids, double_eliminatio
         ).fetchone()
 
         multiplier = 1.0
+        highest_correct = 0
+        loser_correct = 0
         if pred:
             highest_correct = int(pred["predicted_highest_id"] == highest_contestant_id)
             loser_correct = int(pred["predicted_loser_id"] in loser_contestant_ids)
@@ -408,6 +498,14 @@ def finalize_week(highest_contestant_id, loser_contestant_ids, double_eliminatio
                 "UPDATE predictions SET highest_correct = ?, loser_correct = ? WHERE id = ?",
                 (highest_correct, loser_correct, pred["id"]),
             )
+
+        if base_points == 0 and highest_correct and loser_correct:
+            # A player with nothing scoring for them this week (empty roster, or
+            # a held contestant that scored 0) still gets credit for nailing both
+            # predictions: flat points equal to this week's lowest contestant
+            # score, with no multiplier.
+            base_points = week_lowest_score
+            multiplier = 1.0
 
         points_total = base_points * multiplier
         new_season_points = p["season_points"] + points_total

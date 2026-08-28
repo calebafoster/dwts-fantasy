@@ -52,7 +52,7 @@
       <td></td>
     </tr>
     {% endfor %}
-    {% for _ in range(2 - roster|length) %}
+    {% for _ in range(player.roster_size - roster|length) %}
     <tr>
       <td class="empty-slot" colspan="3">Empty slot — draft below</td>
     </tr>
@@ -60,7 +60,7 @@
   </table>
 </div>
 
-{% if roster|length < 2 %}
+{% if roster|length < player.roster_size %}
 <div class="card">
   <h2>Draft a Contestant</h2>
   <form method="post" action="{{ url_for('draft_route') }}">

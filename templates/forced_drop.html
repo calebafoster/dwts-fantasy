@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DWTS Fantasy</title>
+  <script>
+    (function() {
+      var t = localStorage.getItem('theme');
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
+</head>
+<body>
+
+<div class="top">
+  <h1>DWTS Fantasy</h1>
+  <nav>
+    <a href="{{ url_for('logout') }}">Log Out</a>
+    <button type="button" id="theme-toggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" style="margin-left:1rem"></button>
+  </nav>
+</div>
+
+{% for msg in get_flashed_messages() %}
+  <div class="flash">{{ msg }}</div>
+{% endfor %}
+
+<div class="card">
+  <h2>Reserve Pool Exhausted</h2>
+  <p>There are no more unclaimed contestants left. Every player still holding two
+  contestants needs to release one back into the pool. Choose which of your two
+  contestants to give up — it's free, but you'll continue the season with just
+  one contestant.</p>
+  <form method="post" action="{{ url_for('resolve_forced_drop_route') }}">
+    {% for c in roster %}
+    <div class="field">
+      <label>
+        <input type="radio" name="contestant_id" value="{{ c.id }}" required>
+        {{ c.name }}{% if c.partner %} &amp; {{ c.partner }}{% endif %}
+        ({{ "%.1f"|format(c.points_lifetime) }} pts lifetime)
+      </label>
+    </div>
+    {% endfor %}
+    <button type="submit">Release Contestant</button>
+  </form>
+</div>
+
+<script src="{{ url_for('static', filename='theme.js') }}" defer></script>
+</body>
+</html>

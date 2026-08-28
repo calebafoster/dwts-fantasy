@@ -4,7 +4,7 @@ from functions import (
     draft_contestant, submit_prediction, get_current_week, get_active_contestants,
     get_all_contestants, get_prediction, add_contestant, set_contestant_points_this_week,
     eliminate_contestant, set_final_place, start_first_week, finalize_week, finish_season,
-    get_standings, get_leaderboard,
+    get_standings, get_leaderboard, resolve_forced_drop,
 )
 
 app = Flask(__name__)
@@ -14,10 +14,17 @@ init_db()
 start_first_week()
 
 
+FORCED_DROP_EXEMPT = ("login", "logout", "static", "forced_drop", "resolve_forced_drop_route")
+
+
 @app.before_request
 def require_login():
     if request.endpoint not in ("login", "static") and not session.get("player_id"):
         return redirect(url_for("login"))
+    if session.get("player_id") and request.endpoint not in FORCED_DROP_EXEMPT:
+        player = get_player(session["player_id"])
+        if player and player["pending_forced_drop"]:
+            return redirect(url_for("forced_drop"))
 
 
 def current_player():
@@ -85,6 +92,25 @@ def predict_route():
     return redirect(url_for("index"))
 
 
+@app.route("/forced-drop")
+def forced_drop():
+    player = current_player()
+    if not player["pending_forced_drop"]:
+        return redirect(url_for("index"))
+    return render_template("forced_drop.html", player=player, roster=get_roster(player["id"]))
+
+
+@app.route("/forced-drop/resolve", methods=["POST"])
+def resolve_forced_drop_route():
+    contestant_id = int(request.form["contestant_id"])
+    try:
+        resolve_forced_drop(session["player_id"], contestant_id)
+        flash("Contestant released. You'll continue the season with one contestant.")
+    except ValueError as e:
+        flash(str(e))
+    return redirect(url_for("index"))
+
+
 @app.route("/standings")
 def standings():
     return render_template("standings.html", standings=get_standings(), leaderboard=get_leaderboard())
@@ -135,8 +161,11 @@ def admin_eliminate():
     if redirect_response:
         return redirect_response
     contestant_id = int(request.form["contestant_id"])
-    eliminate_contestant(contestant_id)
-    flash("Contestant eliminated.")
+    triggered = eliminate_contestant(contestant_id)
+    if triggered:
+        flash("Contestant eliminated. Reserve pool is empty — full-roster players must drop one contestant.")
+    else:
+        flash("Contestant eliminated.")
     return redirect(url_for("admin"))
 
 
