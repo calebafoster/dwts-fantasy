@@ -106,8 +106,8 @@
   <h2>Finalize Week{% if week_number %} {{ week_number }}{% endif %}</h2>
   <form method="post" action="{{ url_for('admin_finalize_week') }}">
     <div class="field">
-      <label>Highest Scorer</label>
-      <select name="highest_id" required>
+      <label>Highest Scorer(s)</label>
+      <select name="highest_ids" multiple required>
         {% for c in contestants if not c.eliminated %}
         <option value="{{ c.id }}">{{ c.name }}</option>
         {% endfor %}

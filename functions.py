@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS weeks (
     finalized INTEGER NOT NULL DEFAULT 0,
     double_elimination INTEGER NOT NULL DEFAULT 0,
     participating_contestants TEXT,
-    highest_contestant_id INTEGER REFERENCES contestants(id),
+    highest_contestant_ids TEXT,
     loser_contestant_ids TEXT
 );
 
@@ -108,6 +108,19 @@ def _migrate(conn):
         conn.execute("ALTER TABLE players ADD COLUMN roster_size INTEGER NOT NULL DEFAULT 2")
     if "pending_forced_drop" not in cols:
         conn.execute("ALTER TABLE players ADD COLUMN pending_forced_drop INTEGER NOT NULL DEFAULT 0")
+
+    week_cols = [row[1] for row in conn.execute("PRAGMA table_info(weeks)").fetchall()]
+    if "highest_contestant_ids" not in week_cols:
+        conn.execute("ALTER TABLE weeks ADD COLUMN highest_contestant_ids TEXT")
+        if "highest_contestant_id" in week_cols:
+            rows = conn.execute(
+                "SELECT week_number, highest_contestant_id FROM weeks WHERE highest_contestant_id IS NOT NULL"
+            ).fetchall()
+            for r in rows:
+                conn.execute(
+                    "UPDATE weeks SET highest_contestant_ids = ? WHERE week_number = ?",
+                    (json.dumps([r["highest_contestant_id"]]), r["week_number"]),
+                )
 
 
 def log_event(conn, event_name):
@@ -239,21 +252,17 @@ def get_roster(player_id):
     return rows
 
 
+REDRAFT_COST = 5.0
+
+
 def get_redraft_cost(conn):
-    row = conn.execute(
-        """
-        SELECT points FROM weekly_contestant_results
-        WHERE week_number = (SELECT MAX(week_number) FROM weekly_contestant_results)
-        ORDER BY points ASC LIMIT 1
-        """
-    ).fetchone()
-    return row["points"] if row else 0.0
+    return REDRAFT_COST
 
 
 def draft_contestant(player_id, contestant_id):
     """Fills an empty roster slot. A player's first two picks ever are free;
-    every pick after that is priced at the lowest contestant score from the
-    most recently completed week. Returns the cost charged."""
+    every pick after that costs a flat REDRAFT_COST points. Returns the cost
+    charged."""
     conn = get_conn()
     player = conn.execute("SELECT * FROM players WHERE id = ?", (player_id,)).fetchone()
     if player is None:
@@ -450,9 +459,11 @@ def start_first_week():
     conn.close()
 
 
-def finalize_week(highest_contestant_id, loser_contestant_ids, double_elimination=False):
+def finalize_week(highest_contestant_ids, loser_contestant_ids, double_elimination=False):
     """Scores the active week from each contestant's current `points_this_week`,
-    applies prediction multipliers, updates season totals, and opens the next week."""
+    applies prediction multipliers, updates season totals, and opens the next week.
+    `highest_contestant_ids` is a list — normally one entry, more than one on a tie
+    for the week's top score."""
     conn = get_conn()
     week_number = get_active_week_number(conn)
     if week_number is None:
@@ -461,10 +472,10 @@ def finalize_week(highest_contestant_id, loser_contestant_ids, double_eliminatio
 
     conn.execute(
         """
-        UPDATE weeks SET highest_contestant_id = ?, loser_contestant_ids = ?, double_elimination = ?
+        UPDATE weeks SET highest_contestant_ids = ?, loser_contestant_ids = ?, double_elimination = ?
         WHERE week_number = ?
         """,
-        (highest_contestant_id, json.dumps(loser_contestant_ids), int(double_elimination), week_number),
+        (json.dumps(highest_contestant_ids), json.dumps(loser_contestant_ids), int(double_elimination), week_number),
     )
 
     contestants = conn.execute("SELECT id, points_this_week FROM contestants").fetchall()
@@ -491,7 +502,7 @@ def finalize_week(highest_contestant_id, loser_contestant_ids, double_eliminatio
         highest_correct = 0
         loser_correct = 0
         if pred:
-            highest_correct = int(pred["predicted_highest_id"] == highest_contestant_id)
+            highest_correct = int(pred["predicted_highest_id"] in highest_contestant_ids)
             loser_correct = int(pred["predicted_loser_id"] in loser_contestant_ids)
             multiplier += 0.2 * highest_correct + 0.2 * loser_correct
             conn.execute(

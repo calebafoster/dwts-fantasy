@@ -30,8 +30,8 @@ el.add_argument("contestant_id", type=int)
 el.add_argument("--final-place", type=int, default=None)
 
 fw = subparsers.add_parser("finalize-week", help="Score and close out the active week")
-fw.add_argument("highest_id", type=int)
-fw.add_argument("loser_ids", type=int, nargs="+")
+fw.add_argument("--highest-ids", type=int, nargs="+", required=True, dest="highest_ids")
+fw.add_argument("--loser-ids", type=int, nargs="+", required=True, dest="loser_ids")
 fw.add_argument("--double-elimination", action="store_true")
 
 subparsers.add_parser("finish-season", help="Apply season-end placement bonuses")

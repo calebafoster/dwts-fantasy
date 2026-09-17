@@ -186,11 +186,11 @@ def admin_finalize_week():
     redirect_response = require_admin()
     if redirect_response:
         return redirect_response
-    highest_id = int(request.form["highest_id"])
+    highest_ids = [int(x) for x in request.form.getlist("highest_ids")]
     loser_ids = [int(x) for x in request.form.getlist("loser_ids")]
     double_elimination = bool(request.form.get("double_elimination"))
     try:
-        finalize_week(highest_id, loser_ids, double_elimination)
+        finalize_week(highest_ids, loser_ids, double_elimination)
         flash("Week finalized.")
     except ValueError as e:
         flash(str(e))
