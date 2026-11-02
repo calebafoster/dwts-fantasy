@@ -505,6 +505,10 @@ def finalize_week(highest_contestant_ids, loser_contestant_ids, double_eliminati
             highest_correct = int(pred["predicted_highest_id"] in highest_contestant_ids)
             loser_correct = int(pred["predicted_loser_id"] in loser_contestant_ids)
             multiplier += 0.2 * highest_correct + 0.2 * loser_correct
+            if highest_correct and loser_correct:
+                # Combo bonus: an extra +0.2 on top of the two individual
+                # 0.2 bonuses for nailing both predictions in the same week.
+                multiplier += 0.2
             conn.execute(
                 "UPDATE predictions SET highest_correct = ?, loser_correct = ? WHERE id = ?",
                 (highest_correct, loser_correct, pred["id"]),
