@@ -90,7 +90,7 @@
       </select>
     </div>
     <div class="field">
-      <label>Loser</label>
+      <label>Eliminated</label>
       <select name="loser_id" required>
         {% for c in active_contestants %}
         <option value="{{ c.id }}" {% if prediction and prediction.predicted_loser_id == c.id %}selected{% endif %}>{{ c.name }}</option>

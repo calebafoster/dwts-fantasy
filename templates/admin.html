@@ -114,7 +114,7 @@
       </select>
     </div>
     <div class="field">
-      <label>Loser(s)</label>
+      <label>Eliminated</label>
       <select name="loser_ids" multiple required>
         {% for c in contestants if not c.eliminated %}
         <option value="{{ c.id }}">{{ c.name }}</option>
