@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS event_log (
 );
 """
 
-PLACEMENT_BONUS = {1: 0.75, 2: 0.5, 3: 0.25}
+PLACEMENT_BONUS = {1: 0.1, 2: 0.075, 3: 0.05}
 
 
 def get_conn():
